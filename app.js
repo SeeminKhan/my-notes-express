@@ -1,71 +1,75 @@
-require('dotenv').config();
 const express = require("express");
+require('dotenv').config();
 const nunjucks = require('nunjucks');
-const app = express();
 const bodyParser = require('body-parser');
 const session = require('express-session');
 const flash = require('connect-flash');
-const { getNotes, saveNote, deleteNote } = require('./db');
+const { getNotes, saveNote, deleteNote, initializeDatabase } = require('./db');
 
+const app = express();
 const port = process.env.APP_PORT || 3000;
+
 // Configure Nunjucks
 nunjucks.configure('views', {
     autoescape: true,
     express: app
-  });
-  
-app.set('view engine', 'njk'); // Use .njk files
+});
+
+app.set('view engine', 'njk');
+app.use(express.static("public"));
 
 app.use(
     session({
-        secret: process.env.KEY, 
+        secret: process.env.KEY || 'secret',
         resave: false,
         saveUninitialized: true,
-        cookie: { maxAge: 60000 } // Session expires in 1 minute
+        cookie: { maxAge: 60000 }
     })
 );
-  
+
 app.use(flash());
 app.use((req, res, next) => {
-    res.locals.error = req.flash('error'); // Pass flash error messages to views
-    res.locals.success = req.flash('success'); // Pass flash error messages to views
+    res.locals.error = req.flash('error');
+    res.locals.success = req.flash('success');
     next();
 });
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
-app.use(express.static("public"));
-
-app.get("/", async (req,res) => {
-    let notes = await getNotes();
+app.get("/", async (req, res) => {
+    const notes = await getNotes();
     res.render('index', { notes });
-    
 });
 
-app.get("/new", (req,res) => {
+app.get("/new", (req, res) => {
     res.render('new');
 });
 
-app.post("/save", async (req,res) => {
-    let content = req.body.content;
-    if(content == ""){
+app.post("/save", async (req, res) => {
+    const content = req.body.content;
+    if (!content) {
         req.flash('error', 'Content cannot be empty.');
         return res.redirect('/new');
     }
     await saveNote(content);
     req.flash('success', 'Added successfully.');
-    return res.redirect('/');
+    res.redirect('/');
 });
 
-app.get('/delete/:id', async (req,res) => {
+app.get('/delete/:id', async (req, res) => {
     const { id } = req.params;
-
     await deleteNote(id);
     req.flash('success', 'Note deleted successfully.');
-    return res.redirect('/');
+    res.redirect('/');
 });
 
-
-app.listen(port, (err) => {
-    console.log("Server started on http://localhost:"+port);
-})
+// ✅ Initialize DB then start server
+initializeDatabase()
+    .then(() => {
+        app.listen(port, () => {
+            console.log(`Server started on http://localhost:${port}`);
+        });
+    })
+    .catch(err => {
+        console.error("Failed to start server:", err);
+    });
